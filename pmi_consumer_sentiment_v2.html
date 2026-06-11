@@ -1,0 +1,262 @@
+
+<style>
+  * { box-sizing: border-box; }
+  .evt-btn {
+    font-size: 13px; padding: 6px 14px; border-radius: 3px;
+    border: 1.5px solid #1a56c4; background: transparent;
+    color: #1a56c4; cursor: pointer; font-weight: 500;
+    letter-spacing: 0.02em; transition: all 0.12s;
+  }
+  .evt-btn.active { background: #1a56c4; color: #fff; }
+  .evt-btn:hover:not(.active) { background: #eef3fc; }
+  .tt-box {
+    position: absolute; background: #fff;
+    border: 1.5px solid #1a56c4; border-radius: 3px;
+    padding: 12px 16px; font-size: 13px;
+    pointer-events: none; max-width: 260px; z-index: 10;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .card { border: 1.5px solid #d0d9f0; border-radius: 3px; padding: 13px 15px; background: #fff; }
+  .tag-pill { font-size: 11px; padding: 2px 8px; border-radius: 2px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #fff; }
+</style>
+
+<div style="padding: 1rem 0 0.5rem; font-family: var(--font-sans);">
+  <p style="font-size: 13px; color: #777; margin: 0 0 16px; letter-spacing: 0.03em; text-transform: uppercase;">
+    製造業 PMI、服務業 PMI 與消費者信心指數 &nbsp;｜&nbsp; 2015.01 − 2026.05
+  </p>
+
+  <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px; align-items:center;">
+    <span style="font-size:13px; color:#777; margin-right:4px;">篩選：</span>
+    <button class="evt-btn active" onclick="filterEvents('all',this)">全部</button>
+    <button class="evt-btn" onclick="filterEvents('pmi',this)">景氣訊號</button>
+    <button class="evt-btn" onclick="filterEvents('sentiment',this)">消費者信心</button>
+    <button class="evt-btn" onclick="filterEvents('macro',this)">總體背景</button>
+  </div>
+
+  <div style="position:relative; width:100%; height:400px;">
+    <canvas id="pmiChart"></canvas>
+    <div class="tt-box" id="tt" style="display:none;"></div>
+  </div>
+
+  <div style="display:flex; gap:24px; flex-wrap:wrap; margin-top:14px; font-size:13px; color:#555; align-items:center;">
+    <span style="display:flex;align-items:center;gap:7px;">
+      <span style="width:28px;height:3px;background:#1a56c4;display:inline-block;border-radius:2px;"></span>製造業 PMI（左軸）
+    </span>
+    <span style="display:flex;align-items:center;gap:7px;">
+      <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#1a56c4" stroke-width="2" stroke-dasharray="5,3" opacity="0.5"/></svg>服務業 PMI（左軸）
+    </span>
+    <span style="display:flex;align-items:center;gap:7px;">
+      <span style="width:28px;height:3px;background:#aaa;display:inline-block;border-radius:2px;"></span>消費者信心（右軸）
+    </span>
+    <span style="display:flex;align-items:center;gap:7px;">
+      <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#111" stroke-width="1.5" stroke-dasharray="3,2"/></svg>PMI 榮枯線 50
+    </span>
+  </div>
+
+  <div id="eventPanel" style="margin-top:22px; display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px;"></div>
+
+  <p style="margin-top:20px; font-size:11px; color:#aaa;">資料來源：ISM, S&P Global, University of Michigan &nbsp;｜&nbsp; PMI 左軸；消費者信心右軸（基期 1966=100）</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+function genLabels(from, to) {
+  const out = [];
+  let [y,m] = from.split('-').map(Number);
+  const [ey,em] = to.split('-').map(Number);
+  while(y<ey||(y===ey&&m<=em)){
+    out.push(`${y}-${String(m).padStart(2,'0')}`);
+    m++; if(m>12){m=1;y++;}
+  }
+  return out;
+}
+const LABELS = genLabels('2015-01','2026-05');
+
+const MFG_PMI = {
+  '2015-01':53.5,'2015-02':52.9,'2015-03':51.5,'2015-04':51.5,'2015-05':52.8,'2015-06':53.5,
+  '2015-07':52.7,'2015-08':51.1,'2015-09':50.2,'2015-10':50.1,'2015-11':48.6,'2015-12':48.2,
+  '2016-01':48.2,'2016-02':49.5,'2016-03':51.8,'2016-04':50.8,'2016-05':51.3,'2016-06':53.2,
+  '2016-07':52.6,'2016-08':49.4,'2016-09':51.5,'2016-10':51.9,'2016-11':53.2,'2016-12':54.7,
+  '2017-01':56.0,'2017-02':57.7,'2017-03':57.2,'2017-04':54.8,'2017-05':54.9,'2017-06':57.8,
+  '2017-07':56.3,'2017-08':58.8,'2017-09':60.8,'2017-10':58.7,'2017-11':58.2,'2017-12':59.7,
+  '2018-01':59.1,'2018-02':60.8,'2018-03':59.3,'2018-04':57.3,'2018-05':58.7,'2018-06':60.2,
+  '2018-07':58.1,'2018-08':61.3,'2018-09':59.8,'2018-10':57.7,'2018-11':59.3,'2018-12':54.1,
+  '2019-01':56.6,'2019-02':54.2,'2019-03':55.3,'2019-04':52.8,'2019-05':52.1,'2019-06':51.7,
+  '2019-07':51.2,'2019-08':49.1,'2019-09':47.8,'2019-10':48.3,'2019-11':48.1,'2019-12':47.2,
+  '2020-01':50.9,'2020-02':50.1,'2020-03':49.1,'2020-04':41.5,'2020-05':43.1,'2020-06':52.6,
+  '2020-07':54.2,'2020-08':56.0,'2020-09':55.4,'2020-10':59.3,'2020-11':57.5,'2020-12':60.7,
+  '2021-01':58.7,'2021-02':60.8,'2021-03':64.7,'2021-04':60.7,'2021-05':61.2,'2021-06':60.6,
+  '2021-07':59.5,'2021-08':59.9,'2021-09':61.1,'2021-10':60.8,'2021-11':61.1,'2021-12':58.7,
+  '2022-01':57.6,'2022-02':58.6,'2022-03':57.1,'2022-04':55.4,'2022-05':56.1,'2022-06':53.0,
+  '2022-07':52.8,'2022-08':52.8,'2022-09':50.9,'2022-10':50.2,'2022-11':49.0,'2022-12':48.4,
+  '2023-01':47.4,'2023-02':47.7,'2023-03':46.3,'2023-04':47.1,'2023-05':46.9,'2023-06':46.0,
+  '2023-07':46.4,'2023-08':47.6,'2023-09':49.0,'2023-10':46.7,'2023-11':46.7,'2023-12':47.4,
+  '2024-01':49.1,'2024-02':47.8,'2024-03':50.3,'2024-04':49.2,'2024-05':48.7,'2024-06':48.5,
+  '2024-07':46.8,'2024-08':47.2,'2024-09':47.2,'2024-10':46.5,'2024-11':48.4,'2024-12':49.3,
+  '2025-01':50.9,'2025-02':50.3,'2025-03':49.0,'2025-04':48.7,'2025-05':48.7,'2025-06':49.3,
+  '2025-07':49.8,'2025-08':50.4,'2025-09':50.9,'2025-10':51.2,'2025-11':51.8,'2025-12':52.4,
+  '2026-01':51.9,'2026-02':52.4,'2026-03':52.7,'2026-04':52.7,'2026-05':54.0,
+};
+
+const SVC_PMI = {
+  '2015-01':56.7,'2015-02':56.9,'2015-03':56.5,'2015-04':57.8,'2015-05':55.7,'2015-06':56.0,
+  '2015-07':60.3,'2015-08':59.0,'2015-09':56.9,'2015-10':59.1,'2015-11':55.9,'2015-12':55.3,
+  '2016-01':53.5,'2016-02':53.4,'2016-03':54.5,'2016-04':55.7,'2016-05':52.9,'2016-06':56.5,
+  '2016-07':55.5,'2016-08':51.4,'2016-09':57.1,'2016-10':54.8,'2016-11':57.2,'2016-12':57.2,
+  '2017-01':56.5,'2017-02':57.6,'2017-03':55.2,'2017-04':57.5,'2017-05':56.9,'2017-06':57.4,
+  '2017-07':53.9,'2017-08':55.3,'2017-09':59.8,'2017-10':60.1,'2017-11':57.4,'2017-12':56.0,
+  '2018-01':59.9,'2018-02':59.5,'2018-03':58.8,'2018-04':56.8,'2018-05':58.6,'2018-06':59.1,
+  '2018-07':55.7,'2018-08':58.5,'2018-09':61.6,'2018-10':60.3,'2018-11':60.7,'2018-12':57.6,
+  '2019-01':56.7,'2019-02':59.7,'2019-03':56.1,'2019-04':55.5,'2019-05':56.9,'2019-06':55.1,
+  '2019-07':53.7,'2019-08':56.4,'2019-09':52.6,'2019-10':54.7,'2019-11':53.9,'2019-12':55.0,
+  '2020-01':55.5,'2020-02':57.3,'2020-03':52.5,'2020-04':41.8,'2020-05':45.4,'2020-06':57.1,
+  '2020-07':58.1,'2020-08':56.9,'2020-09':57.8,'2020-10':56.6,'2020-11':55.9,'2020-12':57.7,
+  '2021-01':58.7,'2021-02':55.3,'2021-03':63.7,'2021-04':62.7,'2021-05':64.0,'2021-06':60.1,
+  '2021-07':64.1,'2021-08':61.7,'2021-09':61.9,'2021-10':66.7,'2021-11':69.1,'2021-12':62.0,
+  '2022-01':59.9,'2022-02':56.5,'2022-03':58.3,'2022-04':57.1,'2022-05':55.9,'2022-06':55.3,
+  '2022-07':56.7,'2022-08':56.9,'2022-09':56.7,'2022-10':54.4,'2022-11':56.5,'2022-12':49.6,
+  '2023-01':55.2,'2023-02':55.1,'2023-03':51.2,'2023-04':51.9,'2023-05':50.3,'2023-06':53.9,
+  '2023-07':52.7,'2023-08':54.5,'2023-09':53.6,'2023-10':51.8,'2023-11':52.7,'2023-12':50.6,
+  '2024-01':53.4,'2024-02':52.6,'2024-03':51.4,'2024-04':49.4,'2024-05':53.8,'2024-06':48.8,
+  '2024-07':51.4,'2024-08':51.5,'2024-09':54.9,'2024-10':56.0,'2024-11':52.1,'2024-12':54.0,
+  '2025-01':52.8,'2025-02':53.5,'2025-03':50.8,'2025-04':51.6,'2025-05':51.6,'2025-06':52.0,
+  '2025-07':52.4,'2025-08':52.8,'2025-09':53.2,'2025-10':53.6,'2025-11':53.1,'2025-12':52.8,
+  '2026-01':52.8,'2026-02':53.0,'2026-03':53.0,'2026-04':51.0,'2026-05':50.7,
+};
+
+const SENTIMENT = {
+  '2015-01':98.1,'2015-02':95.4,'2015-03':93.0,'2015-04':95.9,'2015-05':90.7,'2015-06':96.1,
+  '2015-07':93.1,'2015-08':91.9,'2015-09':87.2,'2015-10':90.0,'2015-11':91.3,'2015-12':92.6,
+  '2016-01':92.0,'2016-02':91.7,'2016-03':91.0,'2016-04':89.0,'2016-05':94.7,'2016-06':93.5,
+  '2016-07':90.0,'2016-08':89.8,'2016-09':91.2,'2016-10':87.2,'2016-11':93.8,'2016-12':98.2,
+  '2017-01':98.5,'2017-02':96.3,'2017-03':96.9,'2017-04':97.0,'2017-05':97.1,'2017-06':95.1,
+  '2017-07':93.4,'2017-08':96.8,'2017-09':95.1,'2017-10':100.7,'2017-11':98.5,'2017-12':95.9,
+  '2018-01':95.7,'2018-02':99.7,'2018-03':101.4,'2018-04':98.8,'2018-05':98.0,'2018-06':98.2,
+  '2018-07':97.9,'2018-08':96.2,'2018-09':100.1,'2018-10':98.6,'2018-11':97.5,'2018-12':98.3,
+  '2019-01':91.2,'2019-02':93.8,'2019-03':98.4,'2019-04':97.2,'2019-05':100.0,'2019-06':98.2,
+  '2019-07':98.4,'2019-08':89.8,'2019-09':93.2,'2019-10':95.5,'2019-11':96.8,'2019-12':99.3,
+  '2020-01':99.8,'2020-02':101.0,'2020-03':89.1,'2020-04':71.8,'2020-05':72.3,'2020-06':78.1,
+  '2020-07':72.5,'2020-08':74.1,'2020-09':80.4,'2020-10':81.8,'2020-11':76.9,'2020-12':80.7,
+  '2021-01':79.0,'2021-02':76.8,'2021-03':84.9,'2021-04':88.3,'2021-05':82.9,'2021-06':85.5,
+  '2021-07':81.2,'2021-08':70.3,'2021-09':72.8,'2021-10':71.7,'2021-11':67.4,'2021-12':70.6,
+  '2022-01':67.2,'2022-02':62.8,'2022-03':59.4,'2022-04':65.2,'2022-05':58.4,'2022-06':50.0,
+  '2022-07':51.5,'2022-08':58.2,'2022-09':58.6,'2022-10':59.9,'2022-11':56.8,'2022-12':59.7,
+  '2023-01':64.9,'2023-02':66.4,'2023-03':62.0,'2023-04':63.5,'2023-05':59.2,'2023-06':64.4,
+  '2023-07':71.6,'2023-08':69.5,'2023-09':67.9,'2023-10':63.8,'2023-11':61.3,'2023-12':69.7,
+  '2024-01':78.8,'2024-02':76.9,'2024-03':79.4,'2024-04':77.2,'2024-05':69.1,'2024-06':68.2,
+  '2024-07':66.4,'2024-08':67.9,'2024-09':70.1,'2024-10':70.5,'2024-11':71.8,'2024-12':74.0,
+  '2025-01':71.1,'2025-02':64.7,'2025-03':57.0,'2025-04':52.2,'2025-05':52.2,'2025-06':60.5,
+  '2025-07':64.2,'2025-08':67.0,'2025-09':69.8,'2025-10':68.3,'2025-11':66.2,'2025-12':65.1,
+  '2026-01':71.1,'2026-02':64.0,'2026-03':57.9,'2026-04':49.8,'2026-05':44.8,
+};
+
+const mfgData  = LABELS.map(l => MFG_PMI[l]   ?? null);
+const svcData  = LABELS.map(l => SVC_PMI[l]    ?? null);
+const sentData = LABELS.map(l => SENTIMENT[l]  ?? null);
+const fifty    = LABELS.map(() => 50);
+
+const EVENTS = [
+  { month:'2015-12', label:'製造業 PMI 跌破 50', tag:'pmi',
+    desc:'製造業 PMI 降至 48.2，跌破榮枯線。原油崩跌衝擊能源產業，中國需求放緩影響出口，製造業陷入短暫收縮。' },
+  { month:'2018-09', label:'製造業 PMI 達週期高峰', tag:'pmi',
+    desc:'製造業 PMI 升至 59.8，為 2004 年後新高。減稅效應與強勁內需共同推升，但貿易戰陰影已開始拖累新出口訂單。' },
+  { month:'2020-04', label:'COVID 雙指標崩跌', tag:'macro',
+    desc:'製造業 PMI 跌至 41.5，服務業跌至 41.8，消費者信心跌至 71.8。三者同步崩跌，封鎖措施使服務業首當其衝。' },
+  { month:'2021-10', label:'服務業 PMI 歷史高峰', tag:'pmi',
+    desc:'服務業 PMI 升至 66.7，創歷史紀錄。財政刺激釋放的消費需求集中爆發，但供應鏈瓶頸也在此時最為嚴峻，推升通膨預期。' },
+  { month:'2022-06', label:'消費者信心觸歷史低點', tag:'sentiment',
+    desc:'消費者信心跌至 50.0，創 1970 年代石油危機後最低。汽油飆升、通膨 9.1% 創 40 年新高，消費者對未來景氣極度悲觀。' },
+  { month:'2023-06', label:'製造業連續收縮', tag:'pmi',
+    desc:'製造業 PMI 連續 8 個月低於 50，最低跌至 46.0。Fed 暴力升息壓制資本支出，企業去庫存週期拖累製造業，但服務業仍維持擴張。' },
+  { month:'2024-04', label:'服務業 PMI 跌破 50', tag:'pmi',
+    desc:'服務業 PMI 跌至 49.4，為 2020 年後首次收縮。高利率開始侵蝕服務消費，商業活動放緩引發對軟著陸能否實現的疑慮。' },
+  { month:'2025-03', label:'關稅衝擊消費者信心', tag:'sentiment',
+    desc:'對等關稅宣布後，消費者信心從 71 急跌至 57，單季跌幅為 2020 年後最大。通膨預期同步飆升，消費支出前景惡化。' },
+  { month:'2026-01', label:'製造業重返擴張，消費信心背離', tag:'macro',
+    desc:'製造業 PMI 回升至 52–54，中東戰爭推升備料需求、企業搶單。但消費者信心卻持續下滑，兩項指標出現罕見分歧。' },
+  { month:'2026-05', label:'消費者信心創歷史新低 44.8', tag:'sentiment',
+    desc:'中東衝突推升油價，通膨預期一年期跳升至 4.8%，長期預期升至 3.9%。消費者信心創 1952 年調查以來最低，但製造業 PMI 同時升至 54，領先指標出現史上最大分歧。' },
+];
+
+const TAG_COLOR = { pmi:'#1a56c4', sentiment:'#666', macro:'#444' };
+const TAG_BG    = { pmi:'#eef3fc', sentiment:'#f4f4f4', macro:'#f9f9f9' };
+const TAG_LABEL = { pmi:'景氣訊號', sentiment:'消費者信心', macro:'總體背景' };
+let currentFilter = 'all';
+
+function buildChart() {
+  const canvas = document.getElementById('pmiChart');
+  new Chart(canvas.getContext('2d'), {
+    data:{
+      labels: LABELS,
+      datasets:[
+        { type:'line', label:'製造業 PMI', data:mfgData, borderColor:'#1a56c4', backgroundColor:'rgba(26,86,196,0.07)', borderWidth:2.5, pointRadius:0, tension:0.2, fill:false, yAxisID:'y', order:2 },
+        { type:'line', label:'服務業 PMI', data:svcData, borderColor:'#1a56c4', backgroundColor:'transparent', borderWidth:2, borderDash:[5,4], pointRadius:0, tension:0.2, fill:false, yAxisID:'y', order:3 },
+        { type:'line', label:'榮枯線 50', data:fifty, borderColor:'#111', backgroundColor:'transparent', borderWidth:1, borderDash:[3,3], pointRadius:0, tension:0, fill:false, yAxisID:'y', order:4 },
+        { type:'line', label:'消費者信心', data:sentData, borderColor:'#aaa', backgroundColor:'rgba(180,180,180,0.08)', borderWidth:2.5, pointRadius:0, tension:0.2, fill:false, yAxisID:'y2', order:1 },
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{enabled:false} },
+      scales:{
+        x:{ ticks:{ autoSkip:true, maxTicksLimit:12, maxRotation:0, color:'#888', font:{size:13}, callback:(v,i)=> LABELS[i]&&LABELS[i].endsWith('-01')?LABELS[i].slice(0,4):'' }, grid:{color:'rgba(0,0,0,0.05)'} },
+        y:{ position:'left', min:35, max:75, ticks:{color:'#888', font:{size:13}}, grid:{color:'rgba(0,0,0,0.05)'}, title:{display:true, text:'PMI', color:'#1a56c4', font:{size:12}} },
+        y2:{ position:'right', min:40, max:115, ticks:{color:'#888', font:{size:13}}, grid:{display:false}, title:{display:true, text:'消費者信心', color:'#888', font:{size:12}} }
+      },
+      animation:false,
+      onHover:(e, els, chart)=>{
+        const tt = document.getElementById('tt');
+        if(!els.length){ tt.style.display='none'; return; }
+        const i = els[0].index;
+        const lbl = LABELS[i];
+        const rect = chart.canvas.parentElement.getBoundingClientRect();
+        let x = e.native.clientX - rect.left + 14;
+        let y = e.native.clientY - rect.top - 40;
+        if(x > rect.width-260) x -= 280;
+        if(y < 0) y = 8;
+        const matched = EVENTS.filter(ev=>ev.month===lbl);
+        const evHTML = matched.map(ev=>`
+          <div style="margin-top:9px;padding:8px 10px;border-left:3px solid ${TAG_COLOR[ev.tag]};background:${TAG_BG[ev.tag]};">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:${TAG_COLOR[ev.tag]};margin-bottom:3px;">${TAG_LABEL[ev.tag]}</div>
+            <div style="font-weight:600;font-size:13px;color:#111;margin-bottom:3px;">${ev.label}</div>
+            <div style="font-size:12px;color:#444;line-height:1.55;">${ev.desc}</div>
+          </div>`).join('');
+        tt.innerHTML=`
+          <div style="font-size:13px;font-weight:600;color:#111;border-bottom:1px solid #e0e0e0;padding-bottom:6px;margin-bottom:4px;">${lbl}</div>
+          <div style="font-size:12px;color:#555;line-height:1.8;">
+            製造業 PMI：<span style="color:#1a56c4;font-weight:600">${mfgData[i]??'—'}</span><br>
+            服務業 PMI：<span style="color:#1a56c4;font-weight:600;opacity:.7">${svcData[i]??'—'}</span><br>
+            消費者信心：<span style="color:#888;font-weight:600">${sentData[i]??'—'}</span>
+          </div>${evHTML||''}`;
+        tt.style.display='block';
+        tt.style.left=x+'px'; tt.style.top=y+'px';
+      }
+    }
+  });
+  document.getElementById('pmiChart').addEventListener('mouseleave',()=>{ document.getElementById('tt').style.display='none'; });
+}
+
+function renderPanel(filter){
+  const panel = document.getElementById('eventPanel');
+  const list = filter==='all' ? EVENTS : EVENTS.filter(e=>e.tag===filter);
+  panel.innerHTML = list.map(e=>`
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span class="tag-pill" style="background:${TAG_COLOR[e.tag]}">${TAG_LABEL[e.tag]}</span>
+        <span style="font-size:12px;color:#999;">${e.month}</span>
+      </div>
+      <div style="font-size:14px;font-weight:600;color:#111;margin-bottom:4px;">${e.label}</div>
+      <div style="font-size:13px;color:#555;line-height:1.6;">${e.desc}</div>
+    </div>`).join('');
+}
+
+function filterEvents(tag,btn){
+  currentFilter=tag;
+  document.querySelectorAll('.evt-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderPanel(tag);
+}
+
+buildChart();
+renderPanel('all');
+</script>
